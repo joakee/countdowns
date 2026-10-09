@@ -28,7 +28,6 @@ DATA = os.path.join(DATA_DIR, "countdowns.json")
 RESPONSE_DELETE = 1
 
 CSS = b"""
-.large-title  { font-size: 22pt; font-weight: bold; }
 .cd-time      { font-size: 26pt; font-weight: 300; }
 .cd-sub       { font-size: 10pt; }
 .cd-row       { padding: 8px 14px; }
@@ -283,7 +282,7 @@ class Window(Gtk.ApplicationWindow):
         self.add(outer)
 
         # The iOS nav bar, as ordinary widgets inside the window.
-        bar = Gtk.Box(margin=8, margin_bottom=0)
+        bar = Gtk.Box(margin=8)
         self.edit_btn = Gtk.Button(label="Edit", relief=Gtk.ReliefStyle.NONE)
         self.edit_btn.connect("clicked", lambda *_: self.set_editing(not self.editing))
         add = Gtk.Button.new_from_icon_name("list-add-symbolic", Gtk.IconSize.BUTTON)
@@ -293,11 +292,6 @@ class Window(Gtk.ApplicationWindow):
         bar.pack_start(self.edit_btn, False, False, 0)
         bar.pack_end(add, False, False, 0)
         outer.pack_start(bar, False, False, 0)
-
-        title = Gtk.Label(label="Countdowns", xalign=0, margin_start=14,
-                          margin_bottom=6)
-        title.get_style_context().add_class("large-title")
-        outer.pack_start(title, False, False, 0)
 
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.list.set_header_func(self.separator)
