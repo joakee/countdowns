@@ -2,7 +2,8 @@
 Type=Application
 Name=Countdowns
 Comment=Labelled countdowns to a date and time, shown on the conky desktop widgets
-Exec=/home/james/.local/bin/countdowns
+TryExec=countdowns
+Exec=countdowns
 Icon=alarm-symbolic
 Categories=Utility;GTK;
 StartupWMClass=Countdowns
