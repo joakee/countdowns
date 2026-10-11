@@ -42,14 +42,19 @@ CSS = b"""
 
 # ── storage ───────────────────────────────────────────────────
 
+def parse(path):
+    """The countdowns in a JSON file; raises if it isn't one of ours."""
+    with open(path) as f:
+        doc = json.load(f)
+    items = doc.get("countdowns", [])
+    for it in items:
+        datetime.fromisoformat(it["target"])   # validate
+    return items
+
+
 def load():
     try:
-        with open(DATA) as f:
-            doc = json.load(f)
-        items = doc.get("countdowns", [])
-        for it in items:
-            datetime.fromisoformat(it["target"])   # validate
-        return items
+        return parse(DATA)
     except FileNotFoundError:
         return []
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
@@ -64,13 +69,13 @@ def load():
         return []
 
 
-def save(items):
-    os.makedirs(DATA_DIR, exist_ok=True)
-    tmp = DATA + ".tmp"
+def save(items, path=DATA):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
     with open(tmp, "w") as f:
         json.dump({"countdowns": items}, f, indent=2)
         f.write("\n")
-    os.replace(tmp, DATA)   # atomic;  the conky card never reads half a file
+    os.replace(tmp, path)   # atomic;  the conky card never reads half a file
 
 
 def target_ts(item):
@@ -285,16 +290,37 @@ class Window(Gtk.ApplicationWindow):
 
         # The iOS nav bar, as ordinary widgets inside the window.
         bar = Gtk.Box(margin=8)
-        self.edit_btn = Gtk.Button(label="Edit", relief=Gtk.ReliefStyle.NONE)
-        self.edit_btn.connect("clicked", lambda *_: self.set_editing(not self.editing))
+        for name, cb in (("edit", lambda *_: self.set_editing(True)),
+                         ("import", lambda *_: self.import_json()),
+                         ("export", lambda *_: self.export_json()),
+                         ("about", lambda *_: self.about())):
+            act = Gio.SimpleAction(name=name)
+            act.connect("activate", cb)
+            self.add_action(act)
+        menu = Gio.Menu()
+        menu.append("Edit", "win.edit")
+        io = Gio.Menu()
+        io.append("Import…", "win.import")
+        io.append("Export…", "win.export")
+        menu.append_section(None, io)
+        about = Gio.Menu()
+        about.append("About Countdowns", "win.about")
+        menu.append_section(None, about)
+        self.menu_btn = Gtk.MenuButton(menu_model=menu, use_popover=False,
+                                       relief=Gtk.ReliefStyle.NONE,
+                                       tooltip_text="Menu")
+        self.menu_btn.add(Gtk.Image.new_from_icon_name("open-menu-symbolic",
+                                                       Gtk.IconSize.BUTTON))
+        # Only shown in edit mode, as the way back out of it.
+        self.done_btn = Gtk.Button(label="Done", relief=Gtk.ReliefStyle.NONE,
+                                   no_show_all=True)
+        self.done_btn.connect("clicked", lambda *_: self.set_editing(False))
         add = Gtk.Button.new_from_icon_name("list-add-symbolic", Gtk.IconSize.BUTTON)
         add.set_relief(Gtk.ReliefStyle.NONE)
         add.set_tooltip_text("Add countdown (Ctrl+N)")
         add.connect("clicked", lambda *_: self.edit(None))
-        about = Gtk.Button(label="About", relief=Gtk.ReliefStyle.NONE)
-        about.connect("clicked", lambda *_: self.about())
-        bar.pack_start(self.edit_btn, False, False, 0)
-        bar.pack_start(about, False, False, 0)
+        bar.pack_start(self.menu_btn, False, False, 0)
+        bar.pack_start(self.done_btn, False, False, 0)
         bar.pack_end(add, False, False, 0)
         outer.pack_start(bar, False, False, 0)
 
@@ -331,7 +357,10 @@ class Window(Gtk.ApplicationWindow):
             r.destroy()
         for it in sorted(self.items, key=target_ts):
             self.list.add(Row(self, it))
-        self.edit_btn.set_sensitive(bool(self.items) or self.editing)
+        self.sync_edit_action()
+
+    def sync_edit_action(self):
+        self.lookup_action("edit").set_enabled(bool(self.items) and not self.editing)
 
     def commit(self):
         save(self.items)
@@ -349,10 +378,10 @@ class Window(Gtk.ApplicationWindow):
 
     def set_editing(self, on):
         self.editing = on
-        self.edit_btn.set_label("Done" if on else "Edit")
+        self.done_btn.set_visible(on)
         for r in self.list.get_children():
             r.set_editing(on)
-        self.edit_btn.set_sensitive(bool(self.items) or on)
+        self.sync_edit_action()
 
     def on_activate(self, row):
         if self.editing and row.right.get_visible_child_name() == "confirm":
@@ -390,6 +419,66 @@ class Window(Gtk.ApplicationWindow):
                               authors=["James Oakey"])
         dlg.run()
         dlg.destroy()
+
+    def choose_file(self, title, action, accept):
+        dlg = Gtk.FileChooserNative(title=title, transient_for=self, modal=True,
+                                    action=action, accept_label=accept)
+        filt = Gtk.FileFilter()
+        filt.set_name("JSON files")
+        filt.add_mime_type("application/json")
+        filt.add_pattern("*.json")
+        dlg.add_filter(filt)
+        if action == Gtk.FileChooserAction.SAVE:
+            dlg.set_do_overwrite_confirmation(True)
+            dlg.set_current_name("countdowns.json")
+        path = dlg.get_filename() if dlg.run() == Gtk.ResponseType.ACCEPT else None
+        dlg.destroy()
+        return path
+
+    def message(self, kind, text, detail):
+        dlg = Gtk.MessageDialog(transient_for=self, modal=True, message_type=kind,
+                                buttons=Gtk.ButtonsType.OK, text=text,
+                                secondary_text=detail)
+        dlg.run()
+        dlg.destroy()
+
+    def export_json(self):
+        path = self.choose_file("Export Countdowns", Gtk.FileChooserAction.SAVE,
+                                "_Export")
+        if not path:
+            return
+        try:
+            save(self.items, path)
+        except OSError as e:
+            self.message(Gtk.MessageType.ERROR, "Couldn't export countdowns",
+                         str(e))
+
+    def import_json(self):
+        path = self.choose_file("Import Countdowns", Gtk.FileChooserAction.OPEN,
+                                "_Import")
+        if not path:
+            return
+        try:
+            incoming = parse(path)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
+            self.message(Gtk.MessageType.ERROR, "Couldn't import countdowns",
+                         f"That file isn't a countdowns export ({e}).")
+            return
+        # Merge rather than replace, so an import never loses anything: an
+        # entry with an id we already have updates it, the rest are added.
+        by_id = {it["id"]: it for it in self.items}
+        added = 0
+        for it in incoming:
+            it = {"label": "", "enabled": True, **it}
+            it["id"] = it.get("id") or uuid.uuid4().hex
+            if it["id"] not in by_id:
+                added += 1
+            by_id[it["id"]] = it
+        self.items = list(by_id.values())
+        self.commit()
+        self.rebuild()
+        self.message(Gtk.MessageType.INFO, "Import complete",
+                     f"{added} added, {len(incoming) - added} updated.")
 
     def delete(self, ident):
         self.items = [i for i in self.items if i["id"] != ident]
