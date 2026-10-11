@@ -14,7 +14,7 @@ os.environ["GTK_CSD"] = "0"
 
 import gi
 from gi.repository import GLib
-# Before GTK loads: GDK derives WM_CLASS from these at init.
+# GDK derives WM_CLASS from these at init.
 GLib.set_prgname("countdowns")
 GLib.set_application_name("Countdowns")
 gi.require_version("Gtk", "3.0")
@@ -22,6 +22,8 @@ gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, Gio, Gtk  # noqa: E402
 
 APP_ID = "io.github.joakee.Countdowns"
+VERSION = "1.0"
+WEBSITE = "https://github.com/joakee/countdowns"
 DATA_DIR = os.path.join(os.environ.get("XDG_DATA_HOME")
                         or os.path.expanduser("~/.local/share"), "countdowns")
 DATA = os.path.join(DATA_DIR, "countdowns.json")
@@ -51,7 +53,7 @@ def load():
     except FileNotFoundError:
         return []
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
-        # Never silently overwrite a file we failed to read: park it aside.
+        # never silently overwrite a file we failed to read, park it aside.
         bad = DATA + ".bad"
         try:
             os.replace(DATA, bad)
@@ -289,7 +291,10 @@ class Window(Gtk.ApplicationWindow):
         add.set_relief(Gtk.ReliefStyle.NONE)
         add.set_tooltip_text("Add countdown (Ctrl+N)")
         add.connect("clicked", lambda *_: self.edit(None))
+        about = Gtk.Button(label="About", relief=Gtk.ReliefStyle.NONE)
+        about.connect("clicked", lambda *_: self.about())
         bar.pack_start(self.edit_btn, False, False, 0)
+        bar.pack_start(about, False, False, 0)
         bar.pack_end(add, False, False, 0)
         outer.pack_start(bar, False, False, 0)
 
@@ -371,6 +376,20 @@ class Window(Gtk.ApplicationWindow):
             self.items.append({"id": uuid.uuid4().hex, **vals, "enabled": True})
         self.commit()
         self.rebuild()
+
+    def about(self):
+        # The same stock dialog Thunar uses: logo, name, version, blurb,
+        # website, copyright, and a Credits button (shown since authors is set).
+        dlg = Gtk.AboutDialog(transient_for=self, modal=True, use_header_bar=0,
+                              program_name="Countdowns", version=VERSION,
+                              logo_icon_name="alarm-symbolic",
+                              comments="Labelled countdowns to a date and time,\n"
+                                       "shown on the conky desktop widgets.",
+                              website=WEBSITE, website_label="Github",
+                              copyright="Copyright © 2026 James Oakey",
+                              authors=["James Oakey"])
+        dlg.run()
+        dlg.destroy()
 
     def delete(self, ident):
         self.items = [i for i in self.items if i["id"] != ident]
