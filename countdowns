@@ -293,6 +293,7 @@ class Window(Gtk.ApplicationWindow):
         for name, cb in (("edit", lambda *_: self.set_editing(True)),
                          ("import", lambda *_: self.import_json()),
                          ("export", lambda *_: self.export_json()),
+                         ("open-folder", lambda *_: self.open_folder()),
                          ("about", lambda *_: self.about())):
             act = Gio.SimpleAction(name=name)
             act.connect("activate", cb)
@@ -302,6 +303,7 @@ class Window(Gtk.ApplicationWindow):
         io = Gio.Menu()
         io.append("Import…", "win.import")
         io.append("Export…", "win.export")
+        io.append("Open Data Folder", "win.open-folder")
         menu.append_section(None, io)
         about = Gio.Menu()
         about.append("About Countdowns", "win.about")
@@ -479,6 +481,16 @@ class Window(Gtk.ApplicationWindow):
         self.rebuild()
         self.message(Gtk.MessageType.INFO, "Import complete",
                      f"{added} added, {len(incoming) - added} updated.")
+
+    def open_folder(self):
+        try:
+            # Nothing is written until the first change, so it may not exist yet.
+            os.makedirs(DATA_DIR, exist_ok=True)
+            Gtk.show_uri_on_window(self, Gio.File.new_for_path(DATA_DIR).get_uri(),
+                                   Gdk.CURRENT_TIME)
+        except (OSError, GLib.Error) as e:
+            self.message(Gtk.MessageType.ERROR, "Couldn't open the data folder",
+                         str(e))
 
     def delete(self, ident):
         self.items = [i for i in self.items if i["id"] != ident]
